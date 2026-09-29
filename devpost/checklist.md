@@ -19,7 +19,7 @@ Build mode: learn
   Learner check: Open the local app, add one food item, load the sample pantry, and confirm it feels like a calm kitchen setup rather than a recipe search.
   Commit: `Build editable pantry setup`
 
-- [ ] **2. Turn an inventory into an explainable rescue plan**
+- [x] **2. Turn an inventory into an explainable rescue plan**
   Becomes usable: The user can set the approved lightweight constraints and receive a calculated three-meal rescue plan with owned/missing reconciliation, reasons, impact totals, and honest no-plan states.
   Why now: It implements the unique kernel early—using what is already owned to decide what to make—before any shopping experience.
   PRD ref: `prd.md > Constraint-Based Rescue Planning`, `prd.md > Explainable Rescue Plan`, `prd.md > States and Boundaries`
