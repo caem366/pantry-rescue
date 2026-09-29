@@ -9,7 +9,7 @@ Build mode: learn
 
 ## Slices
 
-- [ ] **1. Establish an editable kitchen inventory**
+- [x] **1. Establish an editable kitchen inventory**
   Becomes usable: A local Pantry Rescue app where someone can add, edit, and remove pantry items, mark food as use soon, load a realistic sample pantry into the same interface, and continue when they have enough inventory.
   Why now: This proves the kitchen-first premise and establishes a runnable, visually on-brand home for every later behavior; scaffolding is included only to deliver this real interaction.
   PRD ref: `prd.md > Screens and Layout > Pantry Setup`, `prd.md > Features and Behavior > Inventory Establishment`
