@@ -4,22 +4,30 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -k -n service,vite \"npm:shopping:service\" \"vite --host 127.0.0.1\"",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "concurrently -k -n service,preview \"npm:shopping:service\" \"vite preview --host 127.0.0.1 --port 4173\"",
+    "test:browser": "playwright test",
+    "test:walmart:live": "node --experimental-strip-types scripts/test-walmart-live.ts",
+    "test:steel:recipe": "node --env-file-if-exists=.env --experimental-strip-types scripts/steel-recipe-proof.ts",
+    "shopping:service": "node --env-file-if-exists=.env --experimental-strip-types server/index.ts"
   },
   "dependencies": {
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "steel-sdk": "^0.18.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^9.2.0",
     "oxlint": "^1.81.0",
+    "playwright": "^1.63.0",
     "typescript": "~6.0.2",
-    "vite": "^8.3.0"
+    "vite": "^8.3.5"
   }
 }

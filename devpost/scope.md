@@ -37,9 +37,9 @@ In a short demo, a user manually adds one or two groceries, loads a realistic sa
 - A realistic preloaded sample pantry for a quick, repeatable demo.
 - Meal-plan generation that prioritizes expiring food and respects a limited set of stated constraints.
 - Clear plan explanations: ingredients used/rescued, missing ingredients, and a Rescue Score or equivalent practical summary.
-- Retailer selection with one supported retailer path; clearly identify unsupported retailers.
+- Retailer selection with the existing Kroger API path preserved and Uber Eats as the preferred additional path only when Uber grants Consumer Delivery access; clearly identify any unavailable live integration.
 - A visible, functional shopping-agent flow that generates searches, product choices, quantities, cart contents, and progress from the plan’s actual missing ingredients.
-- A controlled simulated storefront is an acceptable reliable fallback for retailer automation.
+- A controlled simulated storefront is an acceptable reliable fallback, but must never be represented as an Uber or Kroger real cart.
 
 ## Later
 

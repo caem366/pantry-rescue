@@ -9,9 +9,9 @@ status: approved
 
 Pantry Rescue is a small app that runs in one browser. React is the tool that redraws the interface as the user adds ingredients, changes preferences, approves a plan, and watches the shopping task progress. A small, curated recipe catalog ships inside the app. A deterministic rescue scorer compares each recipe to the current pantry and constraints, so results, missing quantities, and explanations are genuinely calculated without needing an AI-model key or external service.
 
-The browser keeps the current pantry and latest plan in `localStorage`—a persistent browser note for this one app—so a refresh does not erase the demo. The shopping task is retailer-agnostic: it hands the same approved missing ingredients to one of two adapters. The hero adapter operates a visible browser session on one tested supported retailer/marketplace, searching results, selecting suitable products/quantities, and adding them to a cart. The fallback adapter uses a local product catalog and task runner, emits the same visible activity steps, and adds products to an in-app demo cart. It is a functional simulation, not a prerecorded animation.
+The browser keeps the current pantry and latest plan in `localStorage`—a persistent browser note for this one app—so a refresh does not erase the demo. Grounded pantry/recipe data and deterministic calculations establish recipe compatibility, owned and use-soon ingredients, rescue value, plan combinations, and missing quantities. The shopping task receives only the user's approved missing ingredients. After catalog matching, the UI presents the exact products and quantities for a second approval before any cart write. The Kroger adapter uses Kroger's official product and cart APIs through a local Node.js/TypeScript service after user OAuth authorization; it does not automate the retailer website. Kroger's cart-write response has no verified read-back in this implementation, so a write is explicitly reported as unverified until the user inspects the real cart and confirms it. Demo Market and the Uber demonstration use local product fixtures and simulated carts, clearly labelled as simulations and not real retailer integrations.
 
-No backend, account system, database, API key, or payment handling is needed. This shape preserves the inventory-to-cart kernel while being reliable enough to record locally.
+No payment details, checkout, order placement, CAPTCHA handling, or anti-bot circumvention are part of the service. Real Kroger use requires the user's own registered developer app, local credentials, callback configuration, and store location.
 
 ## The Core Journey Through the System
 
@@ -22,9 +22,10 @@ Implements `prd.md > The Core Journey`.
 3. `PlanningConstraints` collects meal count, dietary preference, exclusions, and rescue priority in local component state. On **Build my rescue plan**, `planMeals` filters the recipe catalog then scores eligible combinations against pantry items.
 4. `planMeals` returns either a plan or an explicit `need-inventory`, `constraint-conflict`, or `low-rescue` result. `PlanResults` presents the appropriate screen, meal explanations, impact totals, and deduplicated shopping gaps.
 5. Editing a meal or missing quantity reruns the same planner; no shopping task can start until the user approves the current resulting gaps.
-6. `RetailerSelection` offers one tested live retailer/marketplace as supported and labels all others unavailable. The user can choose **Live browser shopping** as the hero path or the clearly labelled Demo Retailer fallback if live access is unavailable.
-7. `ShoppingAgent` turns each approved gap into a queued task. The selected `RetailerAdapter` executes it: the hero Live Browser adapter visibly drives the tested retailer website; the fallback Demo Retailer adapter searches the local catalog. Both apply the same matching/size rule, emit a reason, and return Added, Needs attention, or Skipped.
-8. `CartReview` reconciles every original gap with an Added, Needs attention, or Skipped outcome and ends at **Review retailer cart**. The live path stops at the retailer cart; the fallback ends at the clearly labelled demo cart. No checkout exists.
+6. The user approves the exact shopping gaps, then chooses among the authorized Kroger API, an explicitly simulated Demo Market or Uber demonstration, and unavailable live Uber.
+7. `ShoppingAgent` turns each approved gap into a queued task. An enabled adapter searches its catalog, matches name, package quantity, availability, and supported constraints, then returns a proposed product basket without mutating a cart.
+8. The user reviews every proposed product, requested quantity, and any substitution, then explicitly approves that exact basket. Only that approved selection can reach a cart-write method. If price, availability, or substitution changes materially before a live write, stop and request approval again.
+9. `CartReview` reconciles every approved gap with an individual result. Kroger cart writes remain `NEEDS_ATTENTION` until the user inspects the real cart and confirms an item; a simulation verifies only its own simulated cart. All paths stop before checkout.
 
 ## Stack
 
@@ -32,18 +33,22 @@ Implements `prd.md > The Core Journey`.
 - **Vite React TypeScript template** — learner-approved fast local development/build setup. Use the current `react-ts` template at build time, not pinned speculative versions. Vite documentation: [Getting Started](https://vite.dev/guide/). Current Vite documentation requires Node.js 20.19+ or 22.12+; verify local Node before scaffolding.
 - **CSS modules or one app-level CSS file** — no component-library dependency; the custom consumer-grocery visual direction matters more than speed from a generic UI kit.
 - **Browser `localStorage`** — local persistence for pantry and latest plan; no user identity, hosted database, or sync.
+- **Node.js + TypeScript shopping service** — keeps Kroger credentials and OAuth tokens off the frontend and only accepts approved shopping gaps.
+- **Kroger official API** — user-authorized product search and cart writes; local setup requires a registered app and location ID. Cart writes are not described as verified without cart read-back.
+- **Uber Eats Consumer Delivery API** — no live adapter is enabled without Uber-granted project access, detailed endpoint and scope documentation, test credentials, and a verified cart contract. Public documentation is insufficient to infer an endpoint or OAuth scope. A separately labelled local simulation is available for the demo and cannot affect an Uber account.
+- **Playwright** — tests the app's controlled simulated Demo Market path; it is not used to automate Kroger.
 - **No external AI or recipe API** — a curated data catalog keeps plan generation deterministic and credential-free. The live retailer adapter is an agent/browser capability to validate early, never a presumed DoorDash API integration.
 
 ## Where It Runs and How Someone Tries It
 
-Run locally on a current Node.js installation meeting Vite’s documented requirement. From the project root:
+Run locally on a current Node.js installation meeting Vite’s documented requirement. From `app/`:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite (normally `http://localhost:5173`) in a modern browser. For the recorded demo: add one manual ingredient, load/edit the sample pantry, choose 3 meals and a constraint, build the plan, approve the gaps, run the visible live browser retailer task if validated, and end at retailer-cart review. If it is unavailable, demonstrate the clearly labelled Demo Retailer path using the same gaps.
+Open the local URL printed by Vite (normally `http://127.0.0.1:5173`) in a modern browser. The Kroger path also requires a registered Kroger developer app and values in `app/.env` based on `app/.env.example`, including the exact registered callback URL and a store location ID. Start the app and shopping service in separate terminals from `app/` with `npm run dev` and `npm run shopping:service`. For a simulated demo, load the sample pantry, approve the missing gaps, review and approve the exact products and quantities, then inspect the clearly labelled simulated cart. For a live Kroger attempt, connect through Kroger's consent page and manually inspect its real cart; checkout is never performed. Live Uber remains unavailable until access prerequisites are met.
 
 Use `npm run build` before recording to validate a production build. The required submission remains a short video plus public GitHub repository; deployment is intentionally deferred and local recording is the learner’s choice.
 
@@ -77,15 +82,21 @@ Implements `prd.md > States and Boundaries`. Presents Need more inventory, Const
 
 ### RetailerSelection
 
-Implements `prd.md > Screens and Layout > Retailer Selection`. Declares one tested marketplace/retailer supported, shows exact gaps, and makes any unsupported retailer unavailable. It selects a `LiveBrowserRetailerAdapter` for the hero path or `DemoRetailerAdapter` for the clearly labelled fallback.
+Implements `prd.md > Screens and Layout > Retailer Selection`. Shows the approved gaps and distinguishes Kroger's official API integration, the clearly labelled simulated Demo Market/Uber demos, and unavailable live Uber. Kroger requires local OAuth configuration and user authorization. Live Uber is not selectable without project-specific access and a complete approved API contract.
 
 ### ShoppingAgent and ActivityLog
 
-Implements `prd.md > Transparent Retailer-Aware Shopping`. Converts a plan gap into queued, observable `searching → evaluating → selected → added` actions. It invokes the selected adapter and normalizes its events to the same progress log. A fixed delay/“Continue” control is used only by the Demo Retailer adapter for recording reliability.
+Implements `prd.md > Transparent Retailer-Aware Shopping` and `Basket Discovery, Approval, and Cart Building`. A reusable progress-event model records only observable operations: product matching, basket optimization, and cart work. Product discovery returns proposed selections and performs no cart action. The exact selected products, requested quantities, and substitutions are shown for explicit user approval before a cart adapter can write. Material live price/availability changes invalidate approval. Cart events are reported separately from verification. The Demo Retailer must not use a fake timer after completing a synchronous calculation; retained events correspond to the same adapter calls asynchronous retailers will emit later.
 
 ### Retailer Adapters and CartReview
 
-Implements `prd.md > Agent Shopping and Finished Cart`. `LiveBrowserRetailerAdapter` hands approved gaps to the available browser-agent capability and maps observed browser actions/outcomes back to task events. `DemoRetailerAdapter` searches matching local products using the same decision rules. `CartReview` reconciles task results, handles alternatives and needs-attention states, and exposes no checkout/payment UI.
+Implements `prd.md > Live Retailer and Demo Store`. The Kroger adapter uses official location-specific product search and UPC cart-write APIs after OAuth authorization; its cart verification capability is false, so results remain unverified until user confirmation. Demo Market and Uber demonstration adapters use local, explicitly simulated catalogs and carts; neither modifies a real retailer cart. `CartReview` reports item-level outcomes, provides the Kroger cart link for manual review, and exposes no checkout/payment UI.
+
+### Shopping Service, Selection, and Browser Execution
+
+Implements `prd.md > Transparent Retailer-Aware Shopping`. A Node.js/TypeScript service receives approved gaps and keeps Kroger credentials and tokens off the frontend. For each gap it searches real Kroger candidates, matches name, availability, and compatible package quantity, then presents selections for user approval. The service accepts an exact approved basket for a cart write and does not treat the earlier ingredient-list approval as product approval. The API write response is reported separately from cart verification; without verified read-back the result stays `NEEDS_ATTENTION` until the user confirms the product in Kroger. Failures are explicit and cart writes are not retried after ambiguous responses. No Uber API request is made without Uber-provided endpoint, scope, schema, and test credentials.
+
+Playwright drives the app's predictable browser tests and controlled simulated Demo Market/Uber flows; it is not used to automate Kroger or Uber. Simulated outcomes can be verified against their simulated carts, but are never represented as real retailer activity. The service does not implement checkout or order placement.
 
 ### Planner and Shopping-Agent Services
 
@@ -119,12 +130,24 @@ type TaskItem = {
   productId?: string; reason?: string; events: string[];
 };
 type RetailerAdapter = {
-  id: 'live-browser' | 'demo-retailer';
-  execute(gap: ShoppingGap): Promise<TaskItem>;
+  id: 'demo-retailer' | 'kroger-api' | 'uber-simulated';
+  search(gap: ApprovedShoppingGap): Promise<ProductCandidate[]>;
+  addAndVerify(
+    approvedItem: ApprovedProductSelection,
+  ): Promise<ShoppingOutcome>;
+};
+type ApprovedShoppingGap = { ingredient: string; quantity: number; unit: 'mL' | 'g' | 'each' };
+type ProductCandidate = { name: string; size: number; unit: string; price: number; productUrl: string };
+type ApprovedProductSelection = {
+  gap: ApprovedShoppingGap; productId: string; quantity: number; approvalId: string;
+};
+type ShoppingOutcome = {
+  ingredient: string; status: 'ADDED' | 'NEEDS_ATTENTION' | 'SKIPPED';
+  selectedProduct?: ProductCandidate; reason?: string; cartVerified: boolean;
 };
 ```
 
-`planMeals` uses a small set of deliberately authored recipes and ingredient aliases. It rejects fewer than the configured usable inventory threshold, filters constraints before scoring, favors use-soon matches then owned ingredient count then fewer gaps, deduplicates gaps across selected meals, and marks low rescue rather than disguising it as success. `shoppingAgent` accepts only approved `ShoppingGap[]`; it cannot create arbitrary cart items. Both retailer adapters consume those same gaps and return the same terminal statuses.
+`planMeals` uses a small set of deliberately authored recipes and ingredient aliases. It rejects fewer than the configured usable inventory threshold, filters constraints before scoring, favors use-soon matches then owned ingredient count then fewer gaps, deduplicates gaps across selected meals, and marks low rescue rather than disguising it as success. `shoppingAgent` first accepts only approved `ShoppingGap[]`, then separately requires approved exact product selections before cart mutation. Both retailer adapters return the same terminal statuses.
 
 ## File Structure
 
@@ -165,21 +188,25 @@ project/
 
 - **Node.js/npm** — local package installation and development server. No key, account, rate limit, or cost. Verify Node version before build. [Vite setup](https://vite.dev/guide/)
 - **React and Vite** — local npm dependencies installed by the Vite `react-ts` scaffold. [React installation](https://react.dev/learn/installation), [Vite guide](https://vite.dev/guide/)
-- **Browser-agent capability (to verify early)** — required for the hero path to control a user-visible browser session on one retailer site. The exact provider/capability, permitted actions, login behavior, and cost are unresolved and must be tested with one benign shopping task before it becomes the recorded hero flow. It must never receive payment details or proceed beyond cart review.
-- **Tested retailer website** — no official consumer-cart API is assumed. DoorDash Marketplace API access is limited/approval-based, so it is not the integration path. [DoorDash API access](https://developer.doordash.com/en-US/docs/marketplace/faq/getting_started/)
+- **Kroger official API** — live catalog search and cart writes after the user authorizes a registered developer app. Client credentials, redirect URI, and location ID stay in the local shopping-service environment. A cart write is not cart verification.
+- **Node.js shopping service** — runs locally with `npm run shopping:service`, accepts only approved ingredient gaps, and keeps OAuth tokens server-side.
+- **Playwright** — browser tests for Pantry Rescue and its simulated Demo Market flow; it does not automate Kroger. [Playwright documentation](https://playwright.dev/)
 
 ## Important Failure Modes
 
 - **Pantry is too small or constraints exclude valid meals** → `planner.ts` returns the PRD-defined recovery state rather than arbitrary recipes; UI offers add inventory, sample pantry, preference changes, or lower meal count where valid.
-- **Live browser retailer cannot safely continue** (login/anti-automation friction, lost navigation, product unavailable, or browser-agent error) → mark that gap Needs attention, continue independently actionable gaps where possible, return control to the user, and never claim success.
+- **Kroger authorization, product lookup, or cart write fails** → mark that gap Needs attention, continue independent items where safe, return control to the user, and never claim success.
+- **A product price, availability, or substitution changes after exact-basket approval** → stop that item's write and ask the user to review and approve the changed selection again.
+- **Uber Consumer Delivery access or endpoint contract is unavailable** → keep live Uber disabled, explain the exact access prerequisites, and offer only the clearly labelled Uber simulation or another available retailer. Never guess endpoints, scopes, or schemas.
+- **Kroger cart action cannot be verified by API read-back** → do not emit ADDED; emit NEEDS_ATTENTION and ask the user to inspect the real cart and confirm the item in the UI.
 - **Demo retailer cannot confidently match a gap** → task item becomes Needs attention, shows any authored alternatives, and the rest of the task continues. It is never silently marked added.
 - **Browser storage is unavailable/corrupt** → start a temporary empty pantry with a plain notice; sample pantry still works in the current tab.
-- **Live retailer changes, asks for login, or cannot be automated** → switch to the clearly labelled demo retailer, which executes the same approved gaps and shared decision logic.
+- **Kroger setup or API integration is unavailable** → explain the missing configuration/authorization and offer the clearly labelled simulated Demo Market.
 
 ## What Was Simplified and Why
 
 - **A deterministic local recipe catalog** instead of a live AI recipe API — it calculates the real inventory-to-plan logic without keys, billing, latency, or unpredictable output. A later model can propose catalog additions after the proof is stable.
-- **One tested live browser-retailer adapter plus a functional demo fallback** instead of universal retailer support — live browser navigation is the hero experience, but one website can change or block automation. Both adapters receive the same calculated gaps and share decision logic; the fallback preserves the full demo when the live path cannot run.
+- **Kroger's official API plus clearly labelled simulations** instead of browser automation or universal retailer support — OAuth and API errors are explicit, cart writes are not falsely described as verified, and simulations are not represented as real retailers.
 - **Browser storage** instead of accounts/database — a single-user local demo persists enough data without authentication or infrastructure.
 - **In-app view state** instead of multi-page routing — one linear demo flow needs fewer moving parts and still exposes distinct product surfaces.
 
@@ -187,8 +214,29 @@ project/
 
 - **Learner choice: React + Vite + TypeScript, local sample data, and browser storage** — accepted for a fast, interactive multi-step web app; tradeoff is local-only data and no sharing/sync.
 - **Learner choice: local recording only** — video and public GitHub will demonstrate the project; a deployed link is not planned now.
-- **Learner choice: live browser retailer navigation is the hero shopping path** — implement one tested retailer/marketplace through a browser-agent adapter; it is not an assumed official DoorDash API integration. The functional demo retailer adapter is mandatory fallback for reliability.
+- **Implementation choice: official Kroger API** — React remains the frontend; a Node.js/TypeScript shopping service owns OAuth, product search, and cart writes. Kroger is user-authorized and location-specific. Since cart read-back is not verified, explicit human review is required before reporting user-confirmed additions. The simulated Demo Market is a separately labelled fallback.
+- **Access decision: Uber Eats Consumer Delivery is fail-closed** — public docs identify early access and case-by-case detailed specifications/test credentials, but do not supply enough endpoint-level contract for safe implementation. Do not infer Uber API endpoints, scopes, or schemas. Live Uber requires written project approval where requested, detailed API docs, test credentials, permitted scopes, and a verifiable cart contract. Until then, provide only a clearly labelled local simulation.
+- **Shopping safety: exact basket approval** — approval of missing ingredients alone does not authorize product/cart choices. Display exact products and quantities and require explicit approval before any cart mutation.
 - **Learner choice: deterministic recipe scoring** — accepted to make plan explanations and demo results reliable; it does not claim generative recipe intelligence.
-- **Learning moment: shopping-agent workflow** — the build will inspect `src/lib/shoppingAgent.ts` and `src/lib/retailerAdapters.ts` after it is working. Evidence: the learner can trace one actual gap through queued/searching/evaluating/added (or Needs attention) events and see which adapter completed it.
-- **Open issue, blocking before live-agent implementation:** choose and validate the browser-agent capability and one retailer with a harmless test task. If unavailable or unreliable, record the already-approved demo retailer adapter and make no live-cart claim.
+- **Learning moment: shopping-agent workflow** — inspect `src/lib/shoppingAgent.ts` and `server/krogerAdapter.ts`. Evidence: trace an approved gap through product search, selection, cart-write result, and either user confirmation or Needs attention.
+- **Open issue, external validation required:** the live Kroger cart path needs a user-registered developer app and authorized account/location. Mocked tests and local service smoke tests do not demonstrate an actual retailer cart mutation; do not claim that it works until a user completes the authorized real-cart test. No checkout or order call exists.
+- **Open issue, Uber access required:** public references are [Consumer Delivery introduction](https://developer.uber.com/docs/consumer-delivery/introduction) and [Consumer Identity introduction](https://developer.uber.com/docs/consumer-identity/introduction). The public overview does not provide the Consumer Delivery endpoint and scope contract or test credentials. Request Uber's project-specific access and technical docs before adding live requests.
 - **Open issue, non-blocking: meal imagery** — use CSS/placeholder visuals by default; add image assets only if they can be sourced/licensed without slowing the build.
+## Cross-Retailer Basket Optimization
+
+Pantry Rescue compares only retailers it actually checked and says **Lowest estimated cost among stores checked**, never "cheapest groceries on the internet." `RetailerAdapter` is generic: each adapter declares whether it supports product search, observed prices, and cart building. Kroger is permission-gated; clearly labelled Demo Market and Uber simulated adapters provide test comparison data. Simulated offers must be visibly distinguished from live-retailer data.
+
+## Steel Cloud-Browser Demo Validation
+
+The first permitted cloud-browser vertical slice targets only the existing controlled Demo Market. The Node shopping service creates an interactive Steel session, attaches Playwright over CDP, navigates to a protected HTTPS Netlify preview, searches the rendered product UI, captures product facts and screenshots, asks for exact-product approval, rechecks products, clicks the actual add-to-cart controls, and verifies rendered cart quantities before reporting `ADDED`. The browser viewer URL supports user takeover; session IDs and product previews stay server-side and expire. The service releases the Steel session when asked and never attempts checkout.
+
+`STEEL_API_KEY` and `DEMO_MARKET_URL` are server-only local environment values. Uber Eats and DoorDash browser adapters remain disabled without written authorization; no retailer restriction, CAPTCHA, authentication boundary, or access control is bypassed.
+
+`basketOptimizer.ts` receives normalized product candidates, applies a deliberately small safe unit layer (`mL`/`L`, `g`/`kg`, and `each`), chooses the smallest suitable available package per ingredient and retailer, then ranks complete single-store baskets before incomplete options. It records subtotal, retrieval time, availability, warnings, selections, and estimated total. It does not infer taxes, memberships, promotions, delivery fees, or unavailable prices.
+
+The primary recommendation is the lowest-cost complete single-store basket among actually queried catalog sources. Multi-store theoretical item-price comparison is secondary. Cart building starts only after the exact products and quantities receive explicit approval; an adapter without verified cart capability remains comparison-only.
+## Cart Handoff After Exact-Basket Approval
+
+After the user approves the `MissingIngredient[]`, Kroger searches its actual location-specific catalog and returns compatible UPC/quantity proposals. Pantry Rescue displays and obtains explicit approval for those exact selections before the service accepts a cart-write request. The API write response and verification state remain distinct. Since Kroger cart read-back has not been validated, Pantry Rescue reports a successful write as **Needs attention** until the user opens Kroger's cart and confirms the item. Simulated adapters can verify their own simulated carts but never modify or claim to modify a real retailer cart.
+
+The completed UI reports a result per approved ingredient and exposes a Kroger cart link only for review. No adapter offers checkout, payment, or order placement.

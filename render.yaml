@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: pantry-rescue-shopping
+    runtime: node
+    rootDir: app
+    buildCommand: npm ci && npm run build
+    startCommand: npm run shopping:service
+    healthCheckPath: /health
+    envVars:
+      - key: CORS_ORIGINS
+        sync: false
+      - key: STEEL_API_KEY
+        sync: false
+      - key: DEMO_MARKET_URL
+        sync: false
+      - key: MAX_CLOUD_SESSIONS
+        value: "3"
+      - key: KROGER_CLIENT_ID
+        sync: false
+      - key: KROGER_CLIENT_SECRET
+        sync: false
+      - key: KROGER_REDIRECT_URI
+        sync: false
+      - key: KROGER_LOCATION_ID
+        sync: false

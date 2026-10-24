@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import "./index.css";
+import "./consumer.css";
 import PlannerPanel from "./PlannerPanel";
+import DemoMarket from "./DemoMarket";
+import { rescueRecipes } from "./lib/rescuePlan";
 
 type Zone = "Fridge" | "Freezer" | "Pantry";
 type PantryItem = {
@@ -11,32 +14,51 @@ type PantryItem = {
   zone: Zone;
   useSoon: boolean;
   daysLeft?: number;
+  expiresOn?: string;
 };
 const key = "pantry-rescue-inventory";
-const sample: PantryItem[] = [
-  {
-    id: "spinach",
-    name: "Baby spinach",
-    quantity: "1 bag",
-    zone: "Fridge",
-    useSoon: true,
-    daysLeft: 2,
-  },
+const demoKey = "pantry-rescue-sample-active";
+const personalKey = "pantry-rescue-personal-inventory";
+const futureDate = (days: number) => { const date = new Date(); date.setDate(date.getDate() + days); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; };
+const daysUntil = (date: string) => {
+  const [year, month, day] = date.split("-").map(Number);
+  const today = new Date();
+  return Math.round((Date.UTC(year, month - 1, day) - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86_400_000);
+};
+const sample = (): PantryItem[] => [
   {
     id: "mushrooms",
     name: "Cremini mushrooms",
-    quantity: "250 g",
+    quantity: "200 g",
+    zone: "Fridge",
+    useSoon: true,
+    daysLeft: 1,
+    expiresOn: futureDate(1),
+  },
+  {
+    id: "spinach",
+    name: "Baby spinach",
+    quantity: "150 g",
     zone: "Fridge",
     useSoon: true,
     daysLeft: 2,
+    expiresOn: futureDate(2),
   },
   {
-    id: "yogurt",
-    name: "Greek yogurt",
-    quantity: "500 g",
+    id: "cream",
+    name: "Heavy cream",
+    quantity: "250 mL",
     zone: "Fridge",
     useSoon: true,
     daysLeft: 3,
+    expiresOn: futureDate(3),
+  },
+  {
+    id: "berries",
+    name: "Frozen berries",
+    quantity: "1 bag",
+    zone: "Freezer",
+    useSoon: false,
   },
   {
     id: "pasta",
@@ -66,48 +88,50 @@ const sample: PantryItem[] = [
     zone: "Pantry",
     useSoon: false,
   },
-  {
-    id: "berries",
-    name: "Frozen berries",
-    quantity: "1 bag",
-    zone: "Freezer",
-    useSoon: false,
-  },
 ];
 function read(): PantryItem[] {
   try {
-    return JSON.parse(localStorage.getItem(key) || "[]");
+    const stored: unknown = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(stored) ? stored : [];
   } catch {
     return [];
   }
 }
 
 export default function App() {
+  const [demoMarket, setDemoMarket] = useState(() => window.location.hash.startsWith("#demo-market"));
   const [items, setItems] = useState<PantryItem[]>(read);
   const [name, setName] = useState("");
   const [quantity, setQuantity] = useState("");
   const [zone, setZone] = useState<Zone>("Fridge");
   const [soon, setSoon] = useState(false);
   const [days, setDays] = useState("");
+  const [expiresOn, setExpiresOn] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
-  const [planning, setPlanning] = useState(false);
+  const [demoLoaded, setDemoLoaded] = useState(() => localStorage.getItem(demoKey) === "1");
+  const [planning, setPlanning] = useState(() => window.location.hash.startsWith("#planner"));
   useEffect(() => localStorage.setItem(key, JSON.stringify(items)), [items]);
+  const inventory = useMemo(() => items.map((item) => {
+    const daysLeft = item.expiresOn ? daysUntil(item.expiresOn) : item.daysLeft;
+    return { ...item, daysLeft, useSoon: item.useSoon || (daysLeft !== undefined && daysLeft <= 3) };
+  }), [items]);
   const groups = useMemo(
     () =>
       ["Fridge", "Freezer", "Pantry"].map((zone) => ({
         zone: zone as Zone,
-        items: items.filter((item) => item.zone === zone),
+        items: inventory.filter((item) => item.zone === zone),
       })),
-    [items],
+    [inventory],
   );
-  const urgent = items.filter((item) => item.useSoon).length;
+  const urgent = inventory.filter((item) => item.useSoon).length;
   function reset() {
     setName("");
     setQuantity("");
     setZone("Fridge");
     setSoon(false);
     setDays("");
+    setExpiresOn("");
     setEditing(null);
   }
   function save(event: FormEvent) {
@@ -116,13 +140,19 @@ export default function App() {
       setNotice("Add an ingredient name and amount to save it.");
       return;
     }
+    if (soon && !expiresOn && (!days || !Number.isInteger(Number(days)) || Number(days) < 1)) {
+      setNotice("Add a use-by date, or enter at least one day for an ingredient that needs using soon.");
+      return;
+    }
+    const expiryDays = expiresOn ? daysUntil(expiresOn) : undefined;
     const item: PantryItem = {
       id: editing || crypto.randomUUID(),
       name: name.trim(),
       quantity: quantity.trim(),
       zone,
-      useSoon: soon,
-      daysLeft: soon && days ? Number(days) : undefined,
+      useSoon: soon || (expiryDays !== undefined && expiryDays <= 3),
+      daysLeft: expiryDays ?? (soon && days ? Number(days) : undefined),
+      expiresOn: expiresOn || undefined,
     };
     setItems((current) =>
       editing
@@ -140,51 +170,68 @@ export default function App() {
     setZone(item.zone);
     setSoon(item.useSoon);
     setDays(item.daysLeft?.toString() || "");
+    setExpiresOn(item.expiresOn || "");
     setEditing(item.id);
     setNotice("");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   function loadSample() {
-    setItems(sample.map((item) => ({ ...item })));
+    if (!demoLoaded) {
+      if (items.length && !window.confirm("Replace your current kitchen with the sample pantry? Your ingredients will be saved so you can return to them.")) return;
+      localStorage.setItem(personalKey, JSON.stringify(items));
+    }
+    setItems(sample());
+    setDemoLoaded(true);
+    localStorage.setItem(demoKey, "1");
     reset();
     setNotice(
-      "Sample pantry loaded. You can still edit anything before planning.",
+      demoLoaded ? "Sample pantry reset to today's quantities and use-by dates." : "Sample pantry loaded. You can still edit anything before planning.",
     );
   }
-  if (planning) return <PlannerPanel items={items} onBack={() => setPlanning(false)} />;
+  function restorePersonal() {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(personalKey) || "[]");
+      setItems(Array.isArray(saved) ? saved : []);
+    } catch {
+      setItems([]);
+    }
+    setDemoLoaded(false);
+    localStorage.removeItem(demoKey);
+    localStorage.removeItem(personalKey);
+    reset();
+    setNotice("Your personal kitchen is back.");
+  }
+  useEffect(() => {
+    const syncRoute = () => setDemoMarket(window.location.hash.startsWith("#demo-market"));
+    window.addEventListener("hashchange", syncRoute);
+    return () => window.removeEventListener("hashchange", syncRoute);
+  }, []);
+  function exitDemoMarket() {
+    window.location.hash = "";
+    setDemoMarket(false);
+  }
+  if (demoMarket) return <DemoMarket onExit={exitDemoMarket} />;
+  if (planning) return <PlannerPanel items={inventory} onBack={() => { window.location.hash = ""; setPlanning(false); }} />;
   return (
-    <main className="app">
+    <main className="app consumer-app">
       <header>
         <a className="brand" href="#top">
           <b>P</b> Pantry Rescue
         </a>
         <span>Your kitchen, put to work</span>
       </header>
-      <section className="hero" id="top">
-        <p className="eyebrow">Your kitchen is full of possibilities</p>
-        <h1>
-          Make meals from what you have.
-          <br />
-          <em>Shop only for what you’re missing.</em>
-        </h1>
-        <p>
-          Start with food already in your kitchen. Pantry Rescue turns it into a
-          plan that wastes less and asks for less at checkout.
-        </p>
-      </section>
+      <nav className="journey" aria-label="Your progress"><span className="current">1 <b>Rescue</b></span><span>2 <b>Plan</b></span><span>3 <b>Shop</b></span></nav>
+      <section className="consumer-heading" id="top"><p className="eyebrow">Good food, put to work</p><h1>What needs using up?</h1><p>Add what you have. We’ll find a meal that uses it before it spoils.</p></section>
       <section className="setup">
         <div className="card">
           <div className="title">
             <i>01</i>
             <div>
-              <p className="eyebrow">Your real kitchen</p>
-              <h2>{editing ? "Update an ingredient" : "Add my groceries"}</h2>
+            <p className="eyebrow">Start with what you have</p>
+            <h2>{editing ? "Update an ingredient" : "Start with your kitchen"}</h2>
             </div>
           </div>
-          <p className="muted">
-            Add what’s in your fridge, freezer, or pantry. A little context goes
-            a long way.
-          </p>
+          <p className="muted">Add food that needs using soon, plus any staples you already own.</p>
           <form onSubmit={save}>
             <label>
               Ingredient
@@ -201,6 +248,10 @@ export default function App() {
                 onChange={(e) => setQuantity(e.target.value)}
                 placeholder="e.g. 1 bag"
               />
+            </label>
+            <label>
+              Use-by date
+              <input aria-label="Use-by date" type="date" value={expiresOn} onChange={(event) => { setExpiresOn(event.target.value); setSoon(false); }} />
             </label>
             <div className="row">
               <label>
@@ -220,10 +271,10 @@ export default function App() {
                   checked={soon}
                   onChange={(e) => setSoon(e.target.checked)}
                 />{" "}
-                Needs using soon?
+                Needs rescuing soon?
               </label>
             </div>
-            {soon && (
+            {soon && !expiresOn && (
               <label>
                 About how many days?
                 <input
@@ -236,8 +287,8 @@ export default function App() {
               </label>
             )}
             <div className="actions">
-              <button className="primary">
-                {editing ? "Save changes" : "Add to my kitchen"} →
+              <button className="secondary">
+                {editing ? "Save changes" : "Add to my kitchen"}
               </button>
               {editing && (
                 <button type="button" className="plain" onClick={reset}>
@@ -247,20 +298,9 @@ export default function App() {
             </div>
           </form>
         </div>
-        <aside className="card sample">
-          <div className="food" aria-hidden="true">
-            🥬 🍄 🍋
-          </div>
-          <p className="eyebrow">Want to see the magic?</p>
-          <h2>Try a sample pantry</h2>
-          <p className="muted">
-            Load a realistic kitchen with a few ingredients that need some love.
-            It uses this exact editable pantry.
-          </p>
-          <button className="secondary" onClick={loadSample}>
-            Load sample groceries →
-          </button>
-          <small>No separate demo. Change, add, or remove anything.</small>
+        <aside className="sample-story">
+          <div className="sample-photo"><img src={rescueRecipes[0].imageUrl} alt="Pasta with mushrooms and spinach" loading="lazy" onError={(event) => { event.currentTarget.hidden = true; }} /><span>From what’s already in your fridge</span></div>
+          <div className="sample-story-content"><p className="eyebrow">See how it works</p><h2>Tonight, sorted.</h2><p>Try mushrooms, spinach and cream nearing their use-by dates, plus five freezer and pantry staples.</p><div className="sample-actions"><button className="secondary" onClick={loadSample}>{demoLoaded ? "Reset sample pantry" : "Try the sample pantry"}</button>{demoLoaded && <button className="plain" onClick={restorePersonal}>Return to my kitchen</button>}</div><small>Photo: <a href={rescueRecipes[0].imageCreditUrl} target="_blank" rel="noreferrer">{rescueRecipes[0].imageCredit}</a> · Unsplash License</small></div>
         </aside>
       </section>
       {notice && (
@@ -268,15 +308,11 @@ export default function App() {
           {notice}
         </p>
       )}
+      <section className="plan"><div><p className="eyebrow">Next up</p><h2>{urgent ? `${urgent} ingredient${urgent === 1 ? "" : "s"} expiring soon · ${items.length} ingredient${items.length === 1 ? "" : "s"} available` : "Add food with a use-by date to begin."}</h2><p>{urgent ? "We’ll build meals around these ingredients and shop for only the gaps." : "We’ll build meals around the food that needs using first."}</p></div><button className="primary" disabled={!urgent} onClick={() => { window.location.hash = "planner"; setPlanning(true); }}>Find rescue meals →</button></section>
       <section className="inventory">
         <div className="inventoryHead">
-          <div>
-            <p className="eyebrow">What’s in your kitchen</p>
-            <h2>Your pantry, at a glance</h2>
-          </div>
-          <div>
-            <b>{items.length}</b> ingredients · <b>{urgent}</b> use soon
-          </div>
+          <div><p className="eyebrow">Your kitchen</p><h2>What you already have</h2></div>
+          <div aria-live="polite"><b>{items.length}</b> ingredient{items.length === 1 ? "" : "s"} available · <b>{urgent}</b> expiring soon</div>
         </div>
         {!items.length ? (
           <div className="empty">
@@ -297,7 +333,7 @@ export default function App() {
                 </h3>
                 {group.items.length ? (
                   group.items.map((item) => (
-                    <article key={item.id}>
+                    <article key={item.id} className={item.useSoon ? "use-soon-item" : undefined}>
                       <span>
                         {item.zone === "Freezer"
                           ? "❄"
@@ -310,14 +346,14 @@ export default function App() {
                         <small>{item.quantity}</small>
                         {item.useSoon && (
                           <mark>
-                            Use soon
-                            {item.daysLeft ? ` · ${item.daysLeft} days` : ""}
+                            {item.daysLeft === undefined ? "Use soon" : item.daysLeft <= 0 ? "Use today" : `Use within ${item.daysLeft} day${item.daysLeft === 1 ? "" : "s"}`}
                           </mark>
                         )}
                       </div>
                       <nav>
-                        <button onClick={() => edit(item)}>Edit</button>
+                        <button aria-label={`Edit ${item.name}`} onClick={() => edit(item)}>Edit</button>
                         <button
+                          aria-label={`Remove ${item.name}`}
                           onClick={() =>
                             setItems((old) =>
                               old.filter((entry) => entry.id !== item.id),
@@ -336,28 +372,6 @@ export default function App() {
             ))}
           </div>
         )}
-      </section>
-      <section className="plan">
-        <div>
-          <p className="eyebrow">Ready when you are</p>
-          <h2>
-            {items.length >= 3
-              ? "Let’s turn this into a rescue plan."
-              : "Add at least 3 ingredients to start planning."}
-          </h2>
-          <p>
-            {items.length >= 3
-              ? `${items.length} ingredients added · ${urgent} should be used soon`
-              : "The best plans start with a little more of your kitchen."}
-          </p>
-        </div>
-        <button
-          className="primary"
-          disabled={items.length < 3}
-          onClick={() => setPlanning(true)}
-        >
-          Plan with what I have →
-        </button>
       </section>
     </main>
   );

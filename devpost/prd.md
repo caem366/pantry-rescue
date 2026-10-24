@@ -14,9 +14,10 @@ An inventory-first meal planner for young adults who want to use food they alrea
 3. With a usable inventory, they select **Plan with what I have**, then set a short meal count, limited dietary preference, optional exclusions, and the default priority to rescue use-soon food.
 4. Pantry Rescue either returns an honest planning recovery state or a rescue plan with meal reasoning, plan impact, and a consolidated inventory reconciliation.
 5. The user can inspect, adjust, replace, or approve the plan and its missing quantities. Only after approval can they start shopping.
-6. If no retailer is set, they choose a supported retailer; unsupported retailers are clearly declined with a shopping-list fallback.
-7. A transparent shopping agent works through the approved missing ingredients, visibly searching, choosing a suitable product and quantity, and adding it to a cart. Each item resolves as Added, Needs attention, or Skipped.
-8. The user sees a cart reconciliation and follows **Review retailer cart**. Pantry Rescue stops before checkout, payment, or order placement.
+6. The user selects a supported retailer after approving the exact missing ingredients. Kroger's existing official user-authorized API flow is preserved. Uber Eats is the preferred additional retailer, but its live option is enabled only after Uber grants Consumer Delivery API access and provides the detailed contract. Any simulation is labelled as simulated.
+7. The agent searches only a retailer catalog it is authorized to access, matches products and package quantities, then shows the exact basket for a second approval before requesting cart additions. A simulation never alters or claims to represent a real retailer cart.
+8. Each approved ingredient resolves independently as Added only when cart contents are verified or the user explicitly confirms them, Needs attention when the result is uncertain or failed, or Skipped. Kroger writes remain unverified until user confirmation; Uber writes remain unavailable until the required API access and verification contract are established.
+9. The user sees the per-item reconciliation and opens the retailer cart for review. Pantry Rescue stops before checkout, payment, or order placement.
 
 ## Screens and Layout
 
@@ -40,15 +41,23 @@ An impact section separately shows owned ingredients, use-soon foods rescued, mi
 
 ### Retailer Selection
 
-When needed, show **Where do you usually shop?** and distinguish the one supported retailer from unsupported retailer entries. Restate the exact shopping task and explain that Pantry Rescue will choose reasonable products/quantities, add them to a cart, and leave review and checkout to the user. **Start shopping →** begins the task.
+When needed, show **Where do you usually shop?** and distinguish live-authorized integrations from catalogue-only, simulated, and unavailable options. Preserve the existing Kroger integration. Show Uber Eats as the preferred live target only when the project has Uber's written approval, test credentials, required scopes, and endpoint contract; until then, state that live Uber shopping is unavailable and offer an explicitly simulated Uber demo and the existing Kroger/Demo Market choices. Never imply that a simulation changes an Uber account.
 
-### Agent Shopping and Finished Cart
+### Basket Discovery, Approval, and Cart Building
 
-The hero path uses a real browser agent to navigate one tested supported retailer or grocery marketplace. The browser interaction is visible in the demo: it opens the site, searches the approved gaps, reads product results, selects appropriate products/quantities, and adds them to the retailer cart. Pantry Rescue also retains a persistent progress panel with completion count, per-ingredient status, and meaningful activity such as search, products found, chosen size/quantity, and item added. It briefly explains choices, e.g. selected 900 mL stock because it is the smallest suitable size for ~750 mL needed.
+After plan approval, **Find Cheapest Basket** searches only enabled catalog integrations and begins a separate basket-discovery stage. The user sees progress reflecting actual work: merchant discovery where supported, product lookup, matching, and basket comparison. Product names, package sizes, observed prices, quote timestamp, and missing items are grounded in returned data; simulated products are visibly marked as fixtures.
 
-A clearly labelled simulated/demo storefront is the reliable fallback when the live retailer changes, blocks the agent, requires unavailable authentication, or otherwise cannot complete the task. It receives the same approved gaps and follows the same product-decision rules; it is functional rather than prerecorded.
+When comparison completes, Pantry Rescue presents the retailers actually checked, matched items, item subtotal, any known fees, quote freshness, missing items, and whether totals are comparable. It does not invent delivery totals or compare unlike fulfillment offers. The recommended complete single-retailer basket is shown with every exact product and quantity; the user must explicitly approve it using **Build My Cart** before cart modification begins.
 
-The completion view says **Your cart is ready for review**, shows counts added and needing attention, and reconciles each approved gap with the selected retailer product or unresolved status. **Review retailer cart →** goes to the retailer cart. Source: `scope.md > The Core Loop`.
+Before an authorized live cart mutation, the adapter rechecks price and availability. Any change to product, quantity, price, or availability invalidates approval and requires the user to review the updated exact basket again. After approval, the cart stage shows actual connection, validation, add, and verification states. An item appears as added only after cart state is verified or the user explicitly confirms it. The completion state reports per-item outcomes and exposes only a documented handoff.
+
+### Live Retailer and Demo Store
+
+The existing supported live path uses Kroger's official API after the user connects a locally configured developer app through Kroger's own OAuth consent page. Preserve its behavior and limitations.
+
+Uber Eats is preferred only if Uber grants this project access to Consumer Delivery, including written approval when required, detailed API reference, test credentials, registered scopes, and permitted product/cart operations. The public docs describe capabilities but do not provide enough endpoint, scope, schema, refresh, or cart-verification detail to implement live calls safely. Do not infer those details or use merchant, Uber Direct, or post-order fulfillment APIs as substitutes. Until access arrives, expose Uber live as unavailable and allow a separate, clearly labelled simulated Uber cart flow using fixtures. The user reviews the exact simulated basket and explicitly approves it; simulated results must never claim a real Uber cart changed.
+
+Kroger requires a registered app, exact callback URI, and store location. A Kroger write response remains unverified pending the user's real-cart confirmation. Keep Kroger API credentials and customer tokens server-side. No retailer path exposes checkout, payment submission, or order placement.
 
 ## Look and Feel
 
@@ -88,17 +97,23 @@ Use-soon food uses a coral/peach badge, dot, or soft tint plus clear text (for e
 
 ### Transparent Retailer-Aware Shopping
 
-- As a user, I can direct Pantry Rescue to a supported retailer and watch it shop only my approved gaps.
+- As a user, I can watch Pantry Rescue compare complete baskets before I approve any cart action.
+  - [ ] Selecting **Find my cheapest basket** shows actual discovery, product-matching, and optimization activity; it is not a timer presented after an already-finished calculation.
+  - [ ] The progress view only exposes useful retail facts and actions, never hidden reasoning or prompts.
+  - [ ] Basket results name only stores checked, show availability and estimated total, and explain the lowest estimated complete basket among them.
+  - [ ] Comparison completion leaves cart construction untouched and offers **Build this cart** as the explicit approval boundary.
+- As a user, I can choose Kroger or the clearly labelled simulated Demo Market and shop only my approved gaps.
   - [ ] The task starts with the approved consolidated missing-ingredient list, not a generic list.
-  - [ ] For one tested supported retailer, a visible browser agent navigates the retailer website, searches approved gaps, chooses suitable products/quantities, and adds them to the cart.
-  - [ ] Agent progress visibly records searching, choosing, quantity, and add-to-cart actions.
-  - [ ] Product selection follows this hierarchy: ingredient match, required quantity, straightforward/general product, and no substantially excessive size where practical.
-  - [ ] The current retailer interaction remains visible during the demo.
+  - [ ] The Kroger path uses its official user-authorized API to search actual location-specific products and request additions by UPC; it does not automate the retailer website.
+  - [ ] Progress and results report product search, selected package quantity, cart-write response, and cart verification as distinct facts.
+  - [ ] Product selection requires an available ingredient match and a compatible package unit/size; unverifiable dietary requirements fail closed for user review.
+  - [ ] Kroger writes remain Needs attention until the user reviews the actual cart and confirms the item; Demo Market remains clearly labelled simulation.
 - As a user, I can understand and control uncertain matches.
   - [ ] If an exact match is not confident, show a small set of plausible alternatives for user approval or a Skip action.
   - [ ] The agent never independently makes a meaningful substitution that could alter a recipe or violate a dietary preference.
   - [ ] Every approved gap ends visibly as Added, Needs attention, or Skipped.
   - [ ] The completion screen reconciles every original gap with the retailer product/status and ends at review, never checkout.
+  - [ ] Kroger exposes a real cart link for user review but does not claim cart verification; Demo Market uses **Review cart** for its simulated cart.
 
 ## States and Boundaries
 
@@ -109,10 +124,13 @@ Use-soon food uses a coral/peach badge, dot, or soft tint plus clear text (for e
 - **Low rescue value** — If a valid plan uses too little inventory and needs too many purchases, disclose the ratio and offer **Adjust my plan**, **Add more pantry items**, or **Use this plan anyway**. Do not frame it as a strong rescue result.
 - **Partial urgent-food rescue** — Keep use-soon ingredients that were not included visible, e.g. “2 of 3 use-soon ingredients rescued,” with a lightweight **Find a use for it →** option. This need not trigger a full second planning flow in the POC.
 - **Unsupported retailer** — State that Pantry Rescue cannot shop that retailer yet; offer the supported retailer or a shopping-list view. Never imply automation will occur.
+- **Uber live access unavailable** — Explain that Consumer Delivery is unavailable until Uber grants project access and supplies its detailed API contract and test credentials. Offer the clearly labelled simulated Uber demo or another available retailer; never make a live call.
+- **Exact basket changed** — If product, quantity, price, or availability changes after approval, stop the affected cart action and request approval of the updated selection.
 - **Uncertain/no product match** — Flag the item as Needs attention, offer plausible approval-required alternatives when available, and continue with other gaps.
-- **Live retailer interruption** — If the browser agent encounters login, anti-automation friction, unavailable products, lost navigation state, or another safe-continuation failure, mark the affected item Needs attention, continue other items where possible, and return control to the user. Do not claim success.
+- **Kroger API interruption** — If OAuth, product lookup, availability, matching, or a cart write fails, report the exact affected item as Needs attention and continue independent items where safe. Do not claim success.
 - **Demo retailer fallback** — If the live path is unavailable for development or judging, clearly label the demo storefront and run the same approved task and decision rules there.
-- **Shopping completion** — Show the real cart reconciliation after all items resolve as Added, Needs attention, or Skipped. Checkout, payment, delivery/pickup, retailer account information, and final purchase remain wholly user-controlled.
+- **Shopping completion** — Show each item as Added only after verified cart state or explicit user confirmation; otherwise use Needs attention or Skipped. Checkout, payment, delivery/pickup, retailer account information, and final purchase remain wholly user-controlled.
+- **Basket discovery completion** — Show comparison results and the winning-basket explanation, but do not create or modify any cart until the user takes the distinct **Build this cart** action.
 
 ## Product Decisions
 
@@ -122,12 +140,14 @@ Use-soon food uses a coral/peach badge, dot, or soft tint plus clear text (for e
 - Meal reasoning is inspectable with High/Medium/Low rescue value and explanation, rather than an unexplained AI score.
 - Food rescued and estimated grocery spend avoided are separate benefits and must be labelled distinctly.
 - Shopping begins only after explicit plan approval; changes recalculate gaps before any agent action.
-- One tested retailer/marketplace browser path is the hero experience. A controlled simulated storefront is the reliability fallback, must remain functional and generated from actual plan gaps, and must use the same shopping-agent decision logic.
+- Basket discovery and cart building are two visible, separate agent stages. The user approves the selected basket before any cart action begins.
+- Fast local demo data may complete quickly, but its operation events remain observable and map to the same real adapter operations that a future asynchronous retailer path will emit.
+- Kroger's official, user-authorized API is the live retailer path. A controlled simulated storefront remains clearly labelled, functional, and generated from actual plan gaps.
 - Shopping ends at retailer-cart review so the agent is bounded and the user retains purchase control.
 
 ## What We're Building
 
-An editable manual/sample pantry, lightweight planning constraints, honest rescue-plan outcome states, explainable meal cards and plan reconciliation, plan approval and recalculation, one tested live browser-retailer path, visible functional shopping-agent progress, match exception handling, a functional simulated retailer fallback, and a review-ready cart reconciliation. Source: `scope.md > The POC Boundary`.
+An editable manual/sample pantry, lightweight planning constraints, honest rescue-plan outcome states, explainable meal cards and plan reconciliation, explicit shopping-list approval, Kroger official-API product search and cart writes with user verification, visible functional shopping-agent progress, match exception handling, a clearly labelled simulated retailer fallback, and per-item cart reconciliation. Source: `scope.md > The POC Boundary`.
 
 ## Deferred From the POC
 
@@ -144,7 +164,7 @@ Add reliable integrations for more retailers, image-based item recognition, and 
 ## Non-Goals
 
 - A generic AI recipe chatbot: it fails to demonstrate the inventory-to-cart kernel.
-- Universal retailer compatibility: only one tested live browser path is supported; unsupported retailers must be candidly declined.
+- Universal retailer compatibility: only Kroger's supported API path is offered as a live retailer; unsupported retailers must be candidly declined.
 - Automatic substitutions for meaningful recipe or dietary decisions: user approval is required.
 - Automatic checkout or purchase: Pantry Rescue ends at review by design.
 - Shame-oriented waste messaging: urgency is constructive, calm, and legible.
