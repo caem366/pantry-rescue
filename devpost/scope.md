@@ -5,6 +5,8 @@ status: approved
 
 # Pantry Rescue
 
+> **Submission status (October 25, 2026):** This approved scope records the original plan, not a claim that every retailer path below was delivered. The implemented, verified browser-cart demonstration is the controlled Demo Market. Walmart Canada browser shopping is experimental; live product matching and cart addition have not been fully verified. Kroger, Uber Eats, and DoorDash are not functioning submission integrations. See the root-level `scope.md`, `prd.md`, and `spec.md` for the current product boundary.
+
 Meal planning that starts with your kitchen, not an empty shopping cart.
 
 ## The Unique Kernel

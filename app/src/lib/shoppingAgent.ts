@@ -15,6 +15,7 @@ export type ProductCandidate = {
   packageQuantity?: number; packageUnit?: Unit; price?: number; currency: "CAD" | "USD";
   packageSizeLabel?: string; priceBasisQuantity?: number; priceBasisUnit?: Unit;
   available: boolean; availabilityVerified?: boolean; imageUrl?: string; sourceUrl?: string; retrievedAt: string;
+  searchQuery?: string;
 };
 export type ProductSelection = { ingredient: MissingIngredient; product: ProductCandidate; quantity: number; reason: string };
 export type CartActionResult = { succeeded: boolean; message?: string };

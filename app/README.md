@@ -14,7 +14,7 @@ It is a no-account hackathon demo. Start with **Try the demo**, then follow the 
 
 ## Boundaries
 
-- No real Walmart Canada, Metro, Voila, DoorDash, or Uber Eats cart is changed.
+- Walmart Canada browser shopping is experimental: real searches have been observed, but live product matching and cart addition remain unverified. No real retailer cart addition is claimed for Walmart, Metro, Voilà, DoorDash, or Uber Eats.
 - No verified local Canadian inventory, checkout price, payment, delivery, or order placement is implemented.
 - A static Netlify deployment serves the frontend only. Its `/api` calls require a separately deployed Node shopping service; without one, live comparison and Steel controls show an honest unavailable state. The local demo still works.
 
@@ -64,6 +64,10 @@ The last command is a read-only provider check and needs network access. It does
 React + TypeScript owns the pantry, plan, approvals, and UI. The Node + TypeScript service owns live provider calls and any Steel session credentials. Recipe and selection logic is deterministic TypeScript; product/cart writes only occur after exact product approval. Details are in the root [spec.md](../spec.md).
 
 For a public deployment, host the Node service separately and set the non-secret Netlify build variable `VITE_API_BASE_URL` to its HTTPS URL. Configure that service with the exact Netlify origin in `CORS_ORIGINS`, then verify `/health`. The prepared Render Blueprint and full steps are in [DEPLOYMENT.md](../DEPLOYMENT.md).
+
+## License
+
+Pantry Rescue's original code and documentation are available under the [MIT License](../LICENSE) (copyright 2026 Caelan Mason). Third-party photographs and provider content are not covered by this MIT grant. The bundled food photographs are credited in the app and remain subject to the [Unsplash License](https://unsplash.com/license); dependencies retain their own licenses.
 
 ## References
 

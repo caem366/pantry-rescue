@@ -5,6 +5,8 @@ status: approved
 
 # Pantry Rescue — Technical Spec
 
+> **Submission status (October 25, 2026):** This approved spec preserves the initial technical design, including proposed Kroger/Uber paths and a file tree that predates the current app. Treat those sections as planning history, not an as-built description. The verified browser-cart workflow is the controlled Demo Market using Steel/Playwright. Walmart Canada is experimental; live product matching and cart addition have not been fully verified. Kroger, Uber Eats, and DoorDash are not functioning submission integrations. The root-level `scope.md`, `prd.md`, and `spec.md` describe the current architecture and boundaries.
+
 ## How This Works, In Plain Language
 
 Pantry Rescue is a small app that runs in one browser. React is the tool that redraws the interface as the user adds ingredients, changes preferences, approves a plan, and watches the shopping task progress. A small, curated recipe catalog ships inside the app. A deterministic rescue scorer compares each recipe to the current pantry and constraints, so results, missing quantities, and explanations are genuinely calculated without needing an AI-model key or external service.

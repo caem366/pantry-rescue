@@ -13,7 +13,7 @@ export function forgetWalmartPreview(sessionId: string) { previews.delete(sessio
 
 export async function openWalmartHome(config: Config, sessionId: string) {
   return withCloudBrowser(config, sessionId, async (page) => {
-    await page.goto(walmartOrigin, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.goto(walmartOrigin, { waitUntil: "commit", timeout: 30_000 });
     if (new URL(page.url()).origin !== walmartOrigin) throw new Error("Walmart navigation left the supported website.");
   });
 }
@@ -30,6 +30,8 @@ function requireRunning(sessionId: string) {
 }
 
 export function parseWalmartSize(value: string): { quantity: number; unit: Unit } | undefined {
+  const pack = value.match(/\bpack of (\d+)\b/i);
+  if (pack && Number(pack[1]) > 0) return { quantity: Number(pack[1]), unit: "each" };
   const match = value.match(/(?:^|\s|,|\()([\d.]+)\s*(kg|g|ml|l|ct|count|pack)\b/i);
   if (!match || !Number.isFinite(Number(match[1])) || Number(match[1]) <= 0) return undefined;
   const unit = match[2].toLowerCase();
@@ -37,16 +39,18 @@ export function parseWalmartSize(value: string): { quantity: number; unit: Unit 
 }
 
 export function parseWalmartPrice(value: string): number | undefined {
-  const match = value.match(/(?:CAD\s*)?\$\s*(\d{1,4}(?:[.,]\d{2})?)/i);
-  return match ? Number(match[1].replace(",", ".")) : undefined;
+  const match = value.match(/(?:CAD\s*)?\$\s*(\d{1,4})(?:[.,\s](\d{2}))?(?!\d)/i);
+  return match ? Number(`${match[1]}.${match[2] ?? "00"}`) : undefined;
 }
 
 export function walmartCandidate(raw: { name: string; href: string; text: string }, observedAt = new Date().toISOString()): ProductCandidate | undefined {
   const sourceUrl = productUrl(raw.href);
-  const size = parseWalmartSize(raw.name);
-  const price = parseWalmartPrice(raw.text);
-  if (!sourceUrl || !raw.name.trim() || !size || price === undefined) return undefined;
-  return { retailerId: "walmart-ca", retailerProductId: new URL(sourceUrl).pathname.split("/").at(-1)!, name: raw.name.trim(), packageQuantity: size.quantity, packageUnit: size.unit, price, currency: "CAD", available: !/out of stock|sold out|unavailable/i.test(raw.text), availabilityVerified: false, sourceUrl, retrievedAt: observedAt };
+  const name = raw.name.replace(/^Image:\s*/i, "").trim();
+  const size = parseWalmartSize(name);
+  const currentPrice = raw.text.match(/(?:current price(?:\s+now)?|now)\s*(?:is\s*)?(?:CAD\s*)?\$\s*\d{1,4}(?:[.,\s]\d{2})?/i)?.[0];
+  const price = parseWalmartPrice(currentPrice ?? raw.text);
+  if (!sourceUrl || !name || price === undefined) return undefined;
+  return { retailerId: "walmart-ca", retailerProductId: new URL(sourceUrl).pathname.split("/").at(-1)!, name, packageQuantity: size?.quantity, packageUnit: size?.unit, price, currency: "CAD", available: !/out of stock|sold out|unavailable/i.test(raw.text), availabilityVerified: false, sourceUrl, retrievedAt: observedAt };
 }
 
 async function assertWalmart(page: Page) {
@@ -57,45 +61,67 @@ async function assertWalmart(page: Page) {
 }
 
 export async function searchWalmartProducts(page: Page, ingredient: MissingIngredient): Promise<ProductCandidate[]> {
-  const query = ingredient.searchTerms?.[0] ?? ingredient.ingredient;
-  await page.goto(walmartOrigin, { waitUntil: "domcontentloaded", timeout: 30_000 });
-  await assertWalmart(page);
-  const searchBox = page.locator('input[type="search"], input[placeholder*="Search" i], input[aria-label*="Search" i]').filter({ visible: true }).first();
-  try { await searchBox.waitFor({ state: "visible", timeout: 10_000 }); }
-  catch {
+  const variants: Record<string, string[]> = {
+    garlic: ["fresh garlic", "garlic bulb", "garlic cloves"],
+    parmesan: ["parmesan cheese", "grated parmesan"],
+    "vegetable stock": [],
+  };
+  const queries = [ingredient.ingredient, ...(variants[ingredient.ingredient.trim().toLowerCase()] ?? [])];
+  for (const query of queries) {
+    await page.goto(walmartOrigin, { waitUntil: "commit", timeout: 30_000 });
     await assertWalmart(page);
-    throw new Error(`Walmart's search field was not available at ${page.url()}; no product or cart action was attempted.`);
-  }
-  await searchBox.fill(query);
-  await searchBox.press("Enter");
-  const productLinks = page.locator('a[href*="/en/ip/"]');
-  try { await productLinks.first().waitFor({ state: "visible", timeout: 15_000 }); }
-  catch {
-    await assertWalmart(page);
-    throw new Error(`Walmart search showed no readable product cards at ${page.url()}. The page may have changed, returned no matches, or require user attention.`);
-  }
-  await assertWalmart(page);
-  const raw = await productLinks.evaluateAll((links) => links.map((link) => {
-    let card: Element | null = link.closest('article, li, [data-testid*="product" i], [data-automation-id*="product" i]');
-    if (!card) {
-      card = link.parentElement;
-      for (let depth = 0; depth < 4 && card && !/\$\s*\d/.test(card.textContent ?? ""); depth += 1) card = card.parentElement;
+    const searchBox = page.locator('input[type="search"], input[placeholder*="Search" i], input[aria-label*="Search" i]').filter({ visible: true }).first();
+    try { await searchBox.waitFor({ state: "visible", timeout: 10_000 }); }
+    catch {
+      await assertWalmart(page);
+      throw new Error(`Walmart's search field was not available at ${page.url()}; no product or cart action was attempted.`);
     }
-    return { name: link.querySelector("img")?.getAttribute("alt") || link.textContent?.trim() || link.getAttribute("aria-label") || "", href: (link as HTMLAnchorElement).href, text: card?.textContent?.replace(/\s+/g, " ").trim() ?? "" };
-  }));
-  const unique = new Map<string, ProductCandidate>();
-  for (const row of raw) { const candidate = walmartCandidate(row); if (candidate) unique.set(candidate.retailerProductId, candidate); }
-  return [...unique.values()];
+    await searchBox.fill(query);
+    await searchBox.press("Enter");
+    try {
+      await page.waitForURL((url) => /\/search\b/.test(url.pathname), { timeout: 10_000 });
+      await page.waitForFunction(() => /there were no search results for/i.test(document.body.innerText)
+        || [...document.querySelectorAll('a[href*="/en/ip/"]')].some((link) => Boolean((link as HTMLElement).getClientRects().length)), null, { timeout: 15_000 });
+    } catch {
+      await assertWalmart(page);
+      throw new Error(`Walmart search did not reach readable results for “${query}” at ${page.url()}.`);
+    }
+    await assertWalmart(page);
+    if (/there were no search results for/i.test(await page.locator("body").innerText())) continue;
+    const raw = await page.locator('a[href*="/en/ip/"]').evaluateAll((links) => links.map((link) => {
+      let card: Element | null = link.closest('article, li, [data-testid*="product" i], [data-automation-id*="product" i]');
+      if (!card) {
+        card = link.parentElement;
+        for (let depth = 0; depth < 4 && card && !/\$\s*\d/.test(card.textContent ?? ""); depth += 1) card = card.parentElement;
+      }
+      return { name: link.querySelector("img")?.getAttribute("alt") || link.textContent?.trim() || link.getAttribute("aria-label") || "", href: (link as HTMLAnchorElement).href, text: card?.textContent?.replace(/\s+/g, " ").trim() ?? "" };
+    }));
+    const unique = new Map<string, ProductCandidate>();
+    for (const row of raw) { const candidate = walmartCandidate(row); if (candidate) unique.set(candidate.retailerProductId, { ...candidate, searchQuery: query }); }
+    return [...unique.values()];
+  }
+  throw new Error(`Walmart showed no search results for ${ingredient.ingredient} after: ${queries.join(", ")}.`);
 }
 
-async function inspectProduct(page: Page, selection: ProductSelection): Promise<boolean> {
-  if (!selection.product.sourceUrl || !productUrl(selection.product.sourceUrl)) return false;
-  await page.goto(selection.product.sourceUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+export async function inspectWalmartProduct(page: Page, candidate: ProductCandidate): Promise<ProductCandidate | undefined> {
+  if (!candidate.sourceUrl || !productUrl(candidate.sourceUrl)) return undefined;
+  await page.goto(candidate.sourceUrl, { waitUntil: "commit", timeout: 30_000 });
   await assertWalmart(page);
-  const heading = await page.getByRole("heading", { level: 1 }).first().textContent().catch(() => "");
-  const text = (await page.locator("body").innerText()).slice(0, 3500);
-  return Boolean(heading && heading.trim().toLowerCase() === selection.product.name.trim().toLowerCase()
-    && parseWalmartPrice(text) === selection.product.price && !/out of stock|sold out/i.test(text));
+  const actualUrl = productUrl(page.url());
+  if (!actualUrl || new URL(actualUrl).pathname.split("/").at(-1) !== candidate.retailerProductId) return undefined;
+  const heading = await page.getByRole("heading", { level: 1 }).first().textContent({ timeout: 10_000 }).catch(() => "");
+  const text = (await page.locator("body").innerText()).slice(0, 8000);
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/(\d)\s+(g|kg|ml|l)\b/g, "$1$2").trim();
+  const currentPrice = text.match(/current price (?:is\s*)?(?:CAD\s*)?\$\s*\d{1,4}(?:[.,\s]\d{2})?/i)?.[0];
+  const sizeText = text.match(/\bSize\s*\n\s*([\d.]+\s*(?:kg|g|ml|l|ct|count|pack))\b/i)?.[1];
+  const detailSize = parseWalmartSize(heading ?? "") ?? (sizeText ? parseWalmartSize(sizeText) : undefined);
+  const cardSize = candidate.packageQuantity && candidate.packageUnit ? `${candidate.packageQuantity} ${candidate.packageUnit}` : undefined;
+  if (!heading || normalize(heading) !== normalize(candidate.name)
+    || !currentPrice || parseWalmartPrice(currentPrice) !== candidate.price
+    || /sorry, this item is out of stock|currently out of stock/i.test(text)
+    || (detailSize && cardSize && `${detailSize.quantity} ${detailSize.unit}` !== cardSize)) return undefined;
+  const size = detailSize ?? (cardSize ? { quantity: candidate.packageQuantity!, unit: candidate.packageUnit! } : undefined);
+  return { ...candidate, packageQuantity: size?.quantity, packageUnit: size?.unit };
 }
 
 export async function readWalmartCart(page: Page): Promise<CartLine[]> {
@@ -108,7 +134,10 @@ export async function readWalmartCart(page: Page): Promise<CartLine[]> {
     const quantityInput = row?.querySelector('input[type="number"], input[aria-label*="quantity" i]') as HTMLInputElement | null;
     return { href: (link as HTMLAnchorElement).href, name: link.querySelector("img")?.getAttribute("alt") || link.textContent?.trim() || link.getAttribute("aria-label") || "", text, quantity: quantityInput?.value ?? "" };
   }));
-  if (!lines.length && !/your cart is empty|cart is empty|no items in your cart/i.test(await page.locator("body").innerText())) {
+  const body = await page.locator("body").innerText();
+  const emptyCart = /your cart is empty|cart is empty|no items in your cart/i.test(body)
+    || (/\bcart\s*\(\s*0\s*items?\s*\)/i.test(body) && /time to start shopping/i.test(body));
+  if (!lines.length && !emptyCart) {
     throw new Error("The Walmart cart has no readable product lines or confirmed empty state. No cart mutation is safe.");
   }
   const parsed = lines.flatMap((line) => {
@@ -121,10 +150,32 @@ export async function readWalmartCart(page: Page): Promise<CartLine[]> {
   return parsed;
 }
 
+export async function addVerifiedWalmartProduct(page: Page, selection: ProductSelection, before: CartLine[], beforeClick: () => void = () => {}): Promise<CartLine[]> {
+  const { product } = selection;
+  if (before.some((item) => item.id === product.retailerProductId)) throw new Error("This product was already in your cart; Pantry Rescue did not change it.");
+  if (!await inspectWalmartProduct(page, product)) throw new Error("The product changed since approval; search again.");
+  const buttons = page.getByRole("button", { name: /^add(?: to cart)?$/i }).filter({ visible: true });
+  let clickError: unknown;
+  try {
+    for (let click = 0; click < selection.quantity; click += 1) {
+      beforeClick();
+      if (await buttons.count() !== 1) throw new Error("The product page has no unique Add to cart action.");
+      await buttons.click({ timeout: 8000 });
+    }
+  } catch (error) { clickError = error; }
+  let after: CartLine[];
+  try { after = await readWalmartCart(page); }
+  catch (error) { throw new Error(`Cart state could not be verified after the add attempt; no retry was attempted. ${error instanceof Error ? error.message : ""}`); }
+  const line = after.find((item) => item.id === product.retailerProductId);
+  if (!line || line.name.toLowerCase() !== product.name.toLowerCase() || line.size !== `${product.packageQuantity} ${product.packageUnit}` || line.quantity !== selection.quantity || line.unitPrice !== product.price) {
+    throw new Error(clickError ? "Cart click was uncertain and exact cart contents could not be verified; no retry was attempted." : "Cart product, package, quantity, or price did not match the approved choice; no retry was attempted.");
+  }
+  return after;
+}
+
 export async function previewWalmartBasket(config: Config, sessionId: string, ingredients: MissingIngredient[], postalCode: string) {
   return withCloudBrowser(config, sessionId, async (page, events) => {
     const selections: ProductSelection[] = []; const results: ShoppingResult[] = [];
-    const candidates: { ingredientId: string; products: { id: string; name: string; size: string; price: number; available: boolean }[] }[] = [];
     const candidateProducts = new Map<string, ProductCandidate[]>();
     for (const [index, ingredient] of ingredients.entries()) {
       requireRunning(sessionId);
@@ -133,9 +184,21 @@ export async function previewWalmartBasket(config: Config, sessionId: string, in
       try {
         const products = await searchWalmartProducts(page, ingredient);
         candidateProducts.set(ingredient.id, products);
-        candidates.push({ ingredientId: ingredient.id, products: products.map((item) => ({ id: item.retailerProductId, name: item.name, size: `${item.packageQuantity} ${item.packageUnit}`, price: item.price!, available: item.available })) });
-        const selection = selectProduct(ingredient, products);
-        if (!selection || !await inspectProduct(page, selection)) throw new Error("No product with a matching detail page, package, and observed price was verified.");
+        let selection = selectProduct(ingredient, products);
+        if (!selection) {
+          const words = ingredient.ingredient.toLowerCase().split(/\s+/);
+          for (const candidate of products.filter((item) => words.every((word) => item.name.toLowerCase().includes(word))).slice(0, 6)) {
+            const checked = await inspectWalmartProduct(page, candidate);
+            if (checked) candidateProducts.set(ingredient.id, [...(candidateProducts.get(ingredient.id) ?? []).filter((item) => item.retailerProductId !== checked.retailerProductId), checked]);
+          }
+          selection = selectProduct(ingredient, candidateProducts.get(ingredient.id) ?? []);
+        }
+        if (!selection) throw new Error("No Walmart result had a verified ingredient match, current price, and measurable package size.");
+        const inspected = await inspectWalmartProduct(page, selection.product);
+        if (!inspected) throw new Error("The selected Walmart product page did not confirm its name, package, and current price.");
+        selection = selectProduct(ingredient, [inspected]);
+        if (!selection) throw new Error("The inspected product does not cover the approved ingredient quantity.");
+        if (selection.product.searchQuery) selection = { ...selection, reason: `Found with “${selection.product.searchQuery}”. ${selection.reason}` };
         selections.push(selection);
         events.push(progress("MATCHING", "Found possible matches", "COMPLETE", `${selection.product.name} · ${selection.product.packageQuantity} ${selection.product.packageUnit} · $${selection.product.price?.toFixed(2)}`));
       } catch (error) {
@@ -151,6 +214,7 @@ export async function previewWalmartBasket(config: Config, sessionId: string, in
     }
     events.push(progress("OPTIMIZATION", "Waiting for approval", "COMPLETE", "No cart changes have been made."));
     const id = randomUUID(); previews.set(sessionId, { id, selections, candidates: candidateProducts, results, expiresAt: Date.now() + 5 * 60_000, postalCode });
+    const candidates = [...candidateProducts].map(([ingredientId, products]) => ({ ingredientId, products: products.map((item) => ({ id: item.retailerProductId, name: item.name, size: item.packageQuantity && item.packageUnit ? `${item.packageQuantity} ${item.packageUnit}` : "Size not shown", price: item.price!, available: item.available })) }));
     const screenshot = `data:image/png;base64,${(await page.screenshot({ type: "png" })).toString("base64")}`;
     return { previewId: id, selections, candidates, results, events, screenshot };
   });
@@ -179,26 +243,21 @@ export async function buildWalmartBasket(config: Config, sessionId: string, prev
       try {
         requireRunning(sessionId);
         if (index > 0) events.push(progress("CART", `Moving to ${ingredient.ingredient}`, "ACTIVE"));
-        if (cartItems.some((item) => item.id === product.retailerProductId)) throw new Error("This product was already in your cart; Pantry Rescue did not change it.");
-        if (!await inspectProduct(page, selection)) throw new Error("The product changed since approval; search again.");
         events.push(progress("CART", `Adding ${ingredient.ingredient} to cart`, "ACTIVE", `Approved ${selection.quantity} × ${product.packageQuantity} ${product.packageUnit}`));
-        const buttons = page.getByRole("button", { name: /^add to cart$/i }).filter({ visible: true });
-        let clickError: unknown;
-        try { for (let click = 0; click < selection.quantity; click += 1) { requireRunning(sessionId); if (await buttons.count() !== 1) throw new Error("The product page has no unique Add to cart action."); await buttons.click({ timeout: 8000 }); } }
-        catch (error) { clickError = error; }
-        events.push(progress("CART", "Verifying cart", "ACTIVE"));
-        const after = await readWalmartCart(page);
-        const line = after.find((item) => item.id === product.retailerProductId);
-        if (!line || line.name.toLowerCase() !== product.name.toLowerCase() || line.size !== `${product.packageQuantity} ${product.packageUnit}` || line.quantity !== selection.quantity || line.unitPrice !== product.price) {
-          throw new Error(clickError ? "Cart click was uncertain and exact cart contents could not be verified; no retry was attempted." : "Cart product, package, quantity, or price did not match the approved choice; no retry was attempted.");
-        }
-        cartItems = after;
+        cartItems = await addVerifiedWalmartProduct(page, selection, cartItems, () => requireRunning(sessionId));
+        const line = cartItems.find((item) => item.id === product.retailerProductId)!;
         results.push({ ingredient, selection, status: "ADDED", cartActionSucceeded: true, message: "Exact product, package, quantity, and price verified in Walmart cart." });
         events.push(progress("CART", "Verifying cart", "COMPLETE", `${line.name} · ${line.size} × ${line.quantity}`));
       } catch (error) {
         const message = error instanceof Error ? error.message : "The cart action could not be verified.";
         results.push({ ingredient, selection, status: "NEEDS_ATTENTION", message });
         events.push(progress("CART", `${ingredient.ingredient} needs attention`, "WARNING", message));
+        const identityCheck = /identity check|press and hold|captcha|verify you are human|real shoppers, not robots/i.test(message);
+        if (identityCheck || /cart state could not be verified|cart click was uncertain|cart product, package, quantity, or price did not match/i.test(message)) {
+          pauseCloudDemoSession(sessionId, true);
+          for (const remaining of selections.slice(index + 1)) results.push({ ingredient: remaining.ingredient, selection: remaining, status: "NEEDS_ATTENTION", message: identityCheck ? "Shopping paused for Walmart identity verification; this item was not added." : "Shopping paused because the Walmart cart could not be safely verified; this item was not added." });
+          break;
+        }
       }
     }
     const complete = preview.results.length === 0 && results.every((result) => result.status === "ADDED");

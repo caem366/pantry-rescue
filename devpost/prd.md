@@ -5,6 +5,8 @@ status: approved
 
 # Pantry Rescue — Product Requirements
 
+> **Submission status (October 25, 2026):** This approved PRD preserves earlier requirements and proposed Kroger/Uber paths; those passages are historical plans, not delivered-feature claims. The verified end-to-end shopping demonstration uses the controlled Demo Market with Steel/Playwright and cart reconciliation. Walmart Canada remains experimental, without fully verified live product matching or cart addition. Kroger, Uber Eats, and DoorDash are not functioning submission integrations. The root-level `scope.md`, `prd.md`, and `spec.md` describe the current implementation and limits.
+
 An inventory-first meal planner for young adults who want to use food they already own before buying more. Source: `scope.md > The Unique Kernel`, `Who It's For`.
 
 ## The Core Journey

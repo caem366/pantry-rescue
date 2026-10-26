@@ -154,7 +154,7 @@ export async function startCloudDemoSession(config: CloudDemoConfig): Promise<De
   ensureConfig(config);
   const client = new Steel({ steelAPIKey: config.apiKey });
   const created = await client.sessions.create({ headless: false, persistProfile: true, timeout: 10 * minute, debugConfig: { interactive: true } });
-  const session = { id: created.id, viewerUrl: created.sessionViewerUrl, websocketUrl: created.websocketUrl, expiresAt: Date.now() + 10 * minute, paused: false, takeover: false, events: [progress("DISCOVERY", "Starting shopping session", "COMPLETE")] };
+  const session = { id: created.id, viewerUrl: created.debugUrl, websocketUrl: created.websocketUrl, expiresAt: Date.now() + 10 * minute, paused: false, takeover: false, events: [progress("DISCOVERY", "Starting shopping session", "COMPLETE")] };
   sessions.set(session.id, session);
   return session;
 }

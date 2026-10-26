@@ -185,6 +185,7 @@ export default function CloudDemoPanel({ ingredients, onSessionChange, retailer 
           </div>;
         })}
         {preview.results.map((result) => <p className="connection-error" key={result.ingredient.id}>{result.ingredient.ingredient}: {isWalmart && identityCheck(result.message ?? "") ? "Identity verification needed. Take over the browser to continue." : result.message ?? "Needs your attention"}</p>)}
+        {preview.results.length > 0 && <button className="secondary" disabled={loading || paused || connectionLost} onClick={() => void findProducts()}>Retry product search →</button>}
       </section>
       <p className="muted">Estimated {storeName} product subtotal: <b>${previewTotal.toFixed(2)}</b>. Local stock, taxes, and delivery fees are not verified.</p>
       <button className="primary" disabled={loading || paused || connectionLost || !preview.selections.length || approvedProductIds.length !== preview.selections.length} onClick={() => void buildCart()}>{loading ? "Rechecking and adding…" : `Add approved products to ${isWalmart ? "Walmart" : "demo"} cart →`}</button>
